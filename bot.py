@@ -75,19 +75,16 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Думаю...")
 
     try:
-        url = "https://integrate.api.nvidia.com/v1/chat/completions"
+        url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
-            "Authorization": "Bearer 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",
             "Content-Type": "application/json",
         }
         payload = {
-            "model": "google/gemma-4-31b-it",
+            "model": "mistralai/mistral-7b-instruct:free",
             "messages": [
                 {"role": "user", "content": user_message}
             ],
             "max_tokens": 2048,
-            "temperature": 1,
-            "top_p": 0.95,
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
