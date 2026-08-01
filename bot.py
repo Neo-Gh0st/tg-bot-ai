@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import httpx
 from io import BytesIO
@@ -15,7 +16,6 @@ from telegram.ext import (
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -75,12 +75,19 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Думаю...")
 
     try:
-        import google.generativeai as genai
+        url = "https://text.pollinations.ai/"
+        payload = {
+            "messages": [
+                {"role": "system", "content": "Ты полезный помощник. Отвечай на русском языке."},
+                {"role": "user", "content": user_message}
+            ],
+            "model": "openai",
+        }
 
-        genai.configure(api_key=GOOGLE_AI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
 
-        response = model.generate_content(user_message)
         reply = response.text
 
         if len(reply) > 4000:
@@ -98,8 +105,6 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 def main() -> None:
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set in .env")
-    if not GOOGLE_AI_API_KEY:
-        raise RuntimeError("GOOGLE_AI_API_KEY not set in .env")
 
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 

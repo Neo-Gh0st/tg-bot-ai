@@ -4,9 +4,9 @@ Telegram бот с ИИ моделью для ответов на сообщен
 
 ## Возможности
 
-- Ответы на сообщения с помощью Google Gemini AI
+- Ответы на сообщения с помощью Pollinations.ai (бесплатно)
 - Генерация изображений по запросу (Pollinations.ai)
-- Полностью бесплатно
+- Полностью бесплатно, без API ключей
 
 ## Установка
 
@@ -17,25 +17,12 @@ Telegram бот с ИИ моделью для ответов на сообщен
 pip install -r requirements.txt
 ```
 
-3. Получи API ключи:
-
-**Telegram Bot Token:**
-- Открой @BotFather в Telegram
-- Создай нового бота командой /newbot
-- Скопируй токен
-
-**Google AI API Key:**
-- Перейди на https://aistudio.google.com
-- Нажми "Get API Key"
-- Создай ключ
-
-4. Заполни файл `.env`:
+3. Заполни файл `.env`:
 ```
 TELEGRAM_BOT_TOKEN=твой_токен_бота
-GOOGLE_AI_API_KEY=твой_ключ_google
 ```
 
-5. Запусти бота:
+4. Запусти бота:
 ```bash
 python bot.py
 ```
@@ -61,5 +48,4 @@ python bot.py
 
 - Python 3.10+
 - python-telegram-bot
-- Google Gemini AI
 - Pollinations.ai
