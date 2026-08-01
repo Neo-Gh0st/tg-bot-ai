@@ -17,11 +17,19 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_KEY = "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"
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+http_client = httpx.AsyncClient(timeout=30.0, headers={
+    "Authorization": f"Bearer {NVIDIA_KEY}",
+    "Content-Type": "application/json",
+})
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -44,13 +52,12 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    await update.message.reply_text("Генерирую картинку...")
+    await update.message.reply_text("Генерирую...")
 
     try:
-        url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true"
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+        url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true&seed=-1"
+        response = await http_client.get(url, follow_redirects=True)
+        response.raise_for_status()
 
         img_bytes = BytesIO(response.content)
         img_bytes.name = "image.png"
@@ -72,28 +79,20 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not user_message:
         return
 
-    await update.message.reply_text("Думаю...")
-
     try:
-        url = "https://integrate.api.nvidia.com/v1/chat/completions"
-        headers = {
-            "Authorization": "Bearer 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",
-            "Content-Type": "application/json",
-        }
         payload = {
-            "model": "google/gemma-4-31b-it",
+            "model": "nvidia/nemotron-nano-9b-v2",
             "messages": [
                 {"role": "user", "content": user_message}
             ],
-            "max_tokens": 2048,
-            "temperature": 1,
-            "top_p": 0.95,
+            "max_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.9,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+        response = await http_client.post(NVIDIA_URL, json=payload)
+        response.raise_for_status()
+        data = response.json()
 
         reply = data["choices"][0]["message"]["content"]
 
@@ -105,7 +104,7 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except Exception as e:
         logger.error(f"AI error: {e}")
         await update.message.reply_text(
-            "Произошла ошибка при обращении к ИИ. Попробуй позже."
+            "Произошла ошибка. Попробуй позже."
         )
 
 
