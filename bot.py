@@ -31,6 +31,8 @@ http_client = httpx.AsyncClient(timeout=30.0, headers={
     "Content-Type": "application/json",
 })
 
+img_client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -56,7 +58,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true&seed=-1"
-        response = await http_client.get(url, follow_redirects=True)
+        response = await img_client.get(url)
         response.raise_for_status()
 
         img_bytes = BytesIO(response.content)
@@ -81,7 +83,7 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         payload = {
-            "model": "nvidia/nemotron-nano-9b-v2",
+            "model": "meta/llama-3.1-8b-instruct",
             "messages": [
                 {"role": "user", "content": user_message}
             ],
