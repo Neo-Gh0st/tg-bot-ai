@@ -274,57 +274,78 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not user_message:
         return
 
-    lower = user_message.lower()
+    lower = user_message.lower().strip()
 
-    if any(t in lower for t in ["создай презентацию", "сделай презентацию", "презентация на"]):
-        await update.message.reply_text("Создаю презентацию... Это займёт минуту.")
+    is_presentation = any(word in lower for word in [
+        "презентация", "presentation", "слайды", "slides",
+        "создай презентацию", "сделай презентацию"
+    ])
+
+    if is_presentation:
+        await update.message.reply_text("Создаю презентацию...")
 
         topic = user_message
-        for phrase in ["создай презентацию про", "сделай презентацию про", "презентация на тему",
-                       "создай презентацию", "сделай презентацию", "презентация"]:
-            topic = topic.replace(phrase, "").strip()
+        for phrase in ["создай презентацию про ", "сделай презентацию про ",
+                       "создай презентацию о ", "сделай презентацию о ",
+                       "создай презентацию ", "сделай презентацию ",
+                       "презентация на тему ", "презентация про ",
+                       "презентация о ", "презентация ",
+                       "создай слайды про ", "сделай слайды про ",
+                       "создай слайды ", "сделай слайды ",
+                       "слайды про ", "слайды "]:
+            if phrase in lower:
+                topic = user_message.lower().replace(phrase, "").strip()
+                topic = user_message[len(phrase):].strip()
+                break
+
+        if not topic:
+            topic = user_message
 
         try:
             pptx_bytes = await do_presentation(topic)
-            pptx_bytes.name = f"presentation_{topic[:20]}.pptx"
+            pptx_bytes.name = f"{topic[:20]}.pptx"
 
             await update.message.reply_document(
                 document=pptx_bytes,
                 caption=f"Презентация: {topic}"
             )
         except Exception as e:
-            logger.error(f"Presentation error: {e}")
+            logger.error(f"Presentation error: {e}", exc_info=True)
             await update.message.reply_text("Ошибка создания презентации.")
         return
 
-    if any(t in lower for t in ["найди", "поищи", "что такое", "новости", "google"]):
+    if any(word in lower for word in ["найди", "поищи", "что такое", "какой ", "какая ",
+                                       "какие ", "новости", "google", "найти"]):
         await update.message.reply_text("Ищу...")
         result = await do_search(user_message)
         try:
             reply = await ai_chat([
-                {"role": "system", "content": "Сформируй ответ на основе найденной информации. Отвечай на русском."},
-                {"role": "user", "content": f"Вопрос: {user_message}\n\nРезультаты поиска:\n{result}"}
+                {"role": "system", "content": "Сформируй ответ. Отвечай на русском."},
+                {"role": "user", "content": f"Вопрос: {user_message}\n\nРезультаты:\n{result}"}
             ])
             await update.message.reply_text(reply)
         except:
             await update.message.reply_text(result[:4000])
         return
 
-    if any(t in lower for t in ["напиши код", "код для", "программа", "запусти", "выполни",
-                                 "рассчитай", "посчитай", "сколько будет", "вычисли"]):
+    if any(word in lower for word in ["напиши код", "код для", "программа", "запусти",
+                                       "выполни", "рассчитай", "посчитай", "сколько будет",
+                                       "вычисли", "посчитай"]):
         await update.message.reply_text("Выполняю...")
         code = user_message
-        for phrase in ["напиши код для", "код для", "сделай код для", "программа на python для",
-                       "запусти код", "выполни код", "рассчитай", "посчитай",
-                       "сколько будет", "вычисли"]:
-            code = code.replace(phrase, "").strip()
+        for phrase in ["напиши код для ", "код для ", "сделай код для ",
+                       "программа на python для ", "запусти код ", "выполни код ",
+                       "рассчитай ", "посчитай ", "сколько будет ", "вычисли "]:
+            if phrase in lower:
+                code = user_message[len(phrase):].strip()
+                break
         if not code:
             code = user_message
         result = await do_code(code)
         await update.message.reply_text(f"Результат:\n```\n{result}\n```", parse_mode="Markdown")
         return
 
-    if any(t in lower for t in ["переведи", "перевод на", "как будет на", "translate"]):
+    if any(word in lower for word in ["переведи", "перевод на", "как будет на", "translate"]):
         await update.message.reply_text("Перевожу...")
         result = await do_translate(user_message)
         await update.message.reply_text(f"Перевод:\n{result}")
