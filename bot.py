@@ -7,6 +7,10 @@ import contextlib
 import httpx
 from io import BytesIO
 from dotenv import load_dotenv
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -37,34 +41,7 @@ http_client = httpx.AsyncClient(timeout=30.0, headers={
 img_client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
 
 
-def detect_tool(text: str) -> dict:
-    lower = text.lower()
-
-    code_triggers = ["напиши код", "код для", "сделай код", "программа на python",
-                     "запусти код", "выполни код", "рассчитай", "посчитай",
-                     "сколько будет", "вычисли", "math", "калькулятор"]
-    for t in code_triggers:
-        if t in lower:
-            return {"tool": "code", "query": text}
-
-    search_triggers = ["найди в интернете", "поищи", "что такое", "какой",
-                       "какая", "какие", "новости", "погода", "где находится",
-                       "кто такой", "что сейчас", "расскажи о", "что происходить",
-                       "последние новости", "что нового", "google", "найти информацию"]
-    for t in search_triggers:
-        if t in lower:
-            return {"tool": "search", "query": text}
-
-    translate_triggers = ["переведи", "перевод на", "как будет на", "translate",
-                          "как сказать на", "перевести на"]
-    for t in translate_triggers:
-        if t in lower:
-            return {"tool": "translate", "query": text}
-
-    return {"tool": None, "query": text}
-
-
-async def ai_chat(messages: list, max_tokens: int = 512) -> str:
+async def ai_chat(messages: list, max_tokens: int = 1024) -> str:
     payload = {
         "model": "meta/llama-3.1-8b-instruct",
         "messages": messages,
@@ -75,6 +52,127 @@ async def ai_chat(messages: list, max_tokens: int = 512) -> str:
     response = await http_client.post(NVIDIA_URL, json=payload)
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
+
+
+def create_presentation(title: str, slides_data: list) -> BytesIO:
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    bg_color = RGBColor(15, 23, 42)
+    accent_color = RGBColor(59, 130, 246)
+    text_color = RGBColor(255, 255, 255)
+
+    slide_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(slide_layout)
+
+    bg = slide.background
+    fill = bg.fill
+    fill.solid()
+    fill.fore_color.rgb = bg_color
+
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11), Inches(2))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+
+    p = tf.paragraphs[0]
+    p.text = title
+    p.font.size = Pt(48)
+    p.font.bold = True
+    p.font.color.rgb = text_color
+    p.alignment = PP_ALIGN.CENTER
+
+    for slide_info in slides_data:
+        slide_layout = prs.slide_layouts[6]
+        slide = prs.slides.add_slide(slide_layout)
+
+        bg = slide.background
+        fill = bg.fill
+        fill.solid()
+        fill.fore_color.rgb = bg_color
+
+        if "title" in slide_info:
+            txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11.5), Inches(1.5))
+            tf = txBox.text_frame
+            p = tf.paragraphs[0]
+            p.text = slide_info["title"]
+            p.font.size = Pt(36)
+            p.font.bold = True
+            p.font.color.rgb = accent_color
+
+        if "content" in slide_info:
+            txBox = slide.shapes.add_textbox(Inches(0.8), Inches(2.2), Inches(11.5), Inches(4.5))
+            tf = txBox.text_frame
+            tf.word_wrap = True
+
+            for i, point in enumerate(slide_info["content"]):
+                if i == 0:
+                    p = tf.paragraphs[0]
+                else:
+                    p = tf.add_paragraph()
+                p.text = f"  {point}"
+                p.font.size = Pt(24)
+                p.font.color.rgb = text_color
+                p.space_after = Pt(12)
+
+    output = BytesIO()
+    prs.save(output)
+    output.seek(0)
+    return output
+
+
+def detect_presentation(text: str) -> dict:
+    lower = text.lower()
+
+    create_triggers = ["создай презентацию", "сделай презентацию", "презентация на",
+                       "создать презентацию", "сделать презентацию", "нужна презентация",
+                       "подготовь презентацию", "make presentation"]
+    for t in create_triggers:
+        if t in lower:
+            return {"action": "create", "topic": text}
+
+    edit_triggers = ["отредактируй презентацию", "измени презентацию", "редактировать",
+                     "добавь слайд", "удали слайд", "измени слайд"]
+    for t in edit_triggers:
+        if t in lower:
+            return {"action": "edit", "topic": text}
+
+    return {"action": None}
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "Привет! Я AI-бот с инструментами.\n\n"
+        "Просто напиши мне:\n"
+        "- Создай презентацию про космос\n"
+        "- Найди в интернете что-нибудь\n"
+        "- Напиши код для чего-нибудь\n"
+        "- Переведи на английский привет\n\n"
+        "/image <промпт> - сгенерировать картинку"
+    )
+
+
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    prompt = " ".join(context.args) if context.args else None
+
+    if not prompt:
+        await update.message.reply_text("Используй: /image <описание>")
+        return
+
+    await update.message.reply_text("Генерирую...")
+
+    try:
+        url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true&seed=-1"
+        response = await img_client.get(url)
+        response.raise_for_status()
+
+        img_bytes = BytesIO(response.content)
+        img_bytes.name = "image.png"
+
+        await update.message.reply_photo(photo=img_bytes, caption=f"По запросу: {prompt}")
+    except Exception as e:
+        logger.error(f"Image error: {e}")
+        await update.message.reply_text("Не удалось сгенерировать картинку.")
 
 
 async def do_search(query: str) -> str:
@@ -115,9 +213,7 @@ async def do_translate(text: str) -> str:
 
         lang_map = {"на английский": "en", "на русский": "ru", "на испанский": "es",
                     "на французский": "fr", "на немецкий": "de", "на китайский": "zh",
-                    "на японский": "ja", "на корейский": "ko", "на португальский": "pt",
-                    "на итальянский": "it", "translate to english": "en",
-                    "translate to russian": "ru"}
+                    "на японский": "ja", "на корейский": "ko", "translate to english": "en"}
 
         for phrase, lang in lang_map.items():
             if phrase in lower:
@@ -141,39 +237,36 @@ async def do_translate(text: str) -> str:
         return f"Ошибка перевода: {e}"
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Привет! Я AI-бот с инструментами.\n\n"
-        "Просто напиши мне:\n"
-        "- Найди в интернете что-нибудь\n"
-        "- Напиши код для чего-нибудь\n"
-        "- Переведи на английский привет\n"
-        "- Или просто поболтаем!\n\n"
-        "/image <промпт> - сгенерировать картинку"
-    )
+async def do_presentation(topic: str) -> BytesIO:
+    prompt = f"""Создай структуру презентации на тему: {topic}
+Ответ ТОЛЬКО в формате JSON без markdown:
+{{"title": "Название презентации", "slides": [{{"title": "Название слайда", "content": ["Пункт 1", "Пункт 2", "Пункт 3"]}}]}}
+Сделай 5-7 слайдов, каждый с 3-4 пунктами."""
 
-
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    prompt = " ".join(context.args) if context.args else None
-
-    if not prompt:
-        await update.message.reply_text("Используй: /image <описание>")
-        return
-
-    await update.message.reply_text("Генерирую...")
+    messages = [{"role": "user", "content": prompt}]
+    response_text = await ai_chat(messages, max_tokens=1024)
 
     try:
-        url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true&seed=-1"
-        response = await img_client.get(url)
-        response.raise_for_status()
+        json_str = response_text.strip()
+        if "```" in json_str:
+            json_str = json_str.split("```")[1]
+            if json_str.startswith("json"):
+                json_str = json_str[4:]
+            json_str = json_str.strip()
 
-        img_bytes = BytesIO(response.content)
-        img_bytes.name = "image.png"
-
-        await update.message.reply_photo(photo=img_bytes, caption=f"По запросу: {prompt}")
+        data = json.loads(json_str)
+        title = data.get("title", topic)
+        slides = data.get("slides", [])
     except Exception as e:
-        logger.error(f"Image error: {e}")
-        await update.message.reply_text("Не удалось сгенерировать картинку.")
+        logger.error(f"JSON parse error: {e}, response: {response_text}")
+        title = topic
+        slides = [
+            {"title": "Введение", "content": [f"Тема: {topic}", "Обзор основных понятий", "Актуальность темы"]},
+            {"title": "Основная часть", "content": ["Ключевые концепции", "Примеры", "Детали"]},
+            {"title": "Заключение", "content": ["Выводы", "Перспективы", "Вопросы"]}
+        ]
+
+    return create_presentation(title, slides)
 
 
 async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -181,52 +274,73 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not user_message:
         return
 
-    tool_info = detect_tool(user_message)
-    tool_result = None
+    lower = user_message.lower()
 
-    if tool_info["tool"] == "search":
-        await update.message.reply_text("Ищу в интернете...")
-        tool_result = await do_search(tool_info["query"])
+    if any(t in lower for t in ["создай презентацию", "сделай презентацию", "презентация на"]):
+        await update.message.reply_text("Создаю презентацию... Это займёт минуту.")
 
-    elif tool_info["tool"] == "code":
-        await update.message.reply_text("Выполняю код...")
+        topic = user_message
+        for phrase in ["создай презентацию про", "сделай презентацию про", "презентация на тему",
+                       "создай презентацию", "сделай презентацию", "презентация"]:
+            topic = topic.replace(phrase, "").strip()
+
+        try:
+            pptx_bytes = await do_presentation(topic)
+            pptx_bytes.name = f"presentation_{topic[:20]}.pptx"
+
+            await update.message.reply_document(
+                document=pptx_bytes,
+                caption=f"Презентация: {topic}"
+            )
+        except Exception as e:
+            logger.error(f"Presentation error: {e}")
+            await update.message.reply_text("Ошибка создания презентации.")
+        return
+
+    if any(t in lower for t in ["найди", "поищи", "что такое", "новости", "google"]):
+        await update.message.reply_text("Ищу...")
+        result = await do_search(user_message)
+        try:
+            reply = await ai_chat([
+                {"role": "system", "content": "Сформируй ответ на основе найденной информации. Отвечай на русском."},
+                {"role": "user", "content": f"Вопрос: {user_message}\n\nРезультаты поиска:\n{result}"}
+            ])
+            await update.message.reply_text(reply)
+        except:
+            await update.message.reply_text(result[:4000])
+        return
+
+    if any(t in lower for t in ["напиши код", "код для", "программа", "запусти", "выполни",
+                                 "рассчитай", "посчитай", "сколько будет", "вычисли"]):
+        await update.message.reply_text("Выполняю...")
         code = user_message
-        for phrase in ["напиши код", "код для", "сделай код", "программа на python",
+        for phrase in ["напиши код для", "код для", "сделай код для", "программа на python для",
                        "запусти код", "выполни код", "рассчитай", "посчитай",
-                       "сколько будет", "вычисли", "math", "калькулятор"]:
-            code = code.replace(phrase, "").replace(phrase.upper(), "").strip()
+                       "сколько будет", "вычисли"]:
+            code = code.replace(phrase, "").strip()
         if not code:
             code = user_message
-        tool_result = await do_code(code)
+        result = await do_code(code)
+        await update.message.reply_text(f"Результат:\n```\n{result}\n```", parse_mode="Markdown")
+        return
 
-    elif tool_info["tool"] == "translate":
+    if any(t in lower for t in ["переведи", "перевод на", "как будет на", "translate"]):
         await update.message.reply_text("Перевожу...")
-        tool_result = await do_translate(tool_info["query"])
+        result = await do_translate(user_message)
+        await update.message.reply_text(f"Перевод:\n{result}")
+        return
 
     try:
-        if tool_result:
-            messages = [
-                {"role": "system", "content": "Ты полезный помощник. Отвечай на русском. Используй результат инструмента для ответа."},
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": f"[Результат инструмента]: {tool_result}"},
-                {"role": "user", "content": "Сформируй ответ на основе этого результата."}
-            ]
-        else:
-            messages = [
-                {"role": "system", "content": "Ты полезный помощник. Отвечай кратко на русском языке."},
-                {"role": "user", "content": user_message}
-            ]
-
-        reply = await ai_chat(messages)
-
+        reply = await ai_chat([
+            {"role": "system", "content": "Ты полезный помощник. Отвечай кратко на русском."},
+            {"role": "user", "content": user_message}
+        ])
         if len(reply) > 4000:
             reply = reply[:4000] + "..."
-
         await update.message.reply_text(reply)
-
     except Exception as e:
         logger.error(f"AI error: {e}")
-        await update.message.reply_text("Произошла ошибка. Попробуй позже.")
+        await update.message.reply_text("Ошибка. Попробуй позже.")
 
 
 def main() -> None:
