@@ -75,17 +75,12 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Думаю...")
 
     try:
-        url = "https://text.pollinations.ai/"
-        payload = {
-            "messages": [
-                {"role": "system", "content": "Ты полезный помощник. Отвечай на русском языке."},
-                {"role": "user", "content": user_message}
-            ],
-            "model": "openai",
-        }
+        import urllib.parse
+        encoded = urllib.parse.quote(user_message)
+        url = f"https://text.pollinations.ai/{encoded}"
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload)
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            response = await client.get(url)
             response.raise_for_status()
 
         reply = response.text
