@@ -40,6 +40,9 @@ http_client = httpx.AsyncClient(timeout=30.0, headers={
 
 img_client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
 
+user_histories = {}
+MAX_HISTORY = 20
+
 
 async def ai_chat(messages: list, max_tokens: int = 1024) -> str:
     payload = {
@@ -142,14 +145,21 @@ def detect_presentation(text: str) -> dict:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Привет! Я AI-бот с инструментами.\n\n"
-        "Просто напиши мне:\n"
+        "Привет! Я AI-бот с памятью и инструментами.\n\n"
+        "Я помню наш диалог! Просто пиши:\n"
         "- Создай презентацию про космос\n"
         "- Найди в интернете что-нибудь\n"
         "- Напиши код для чего-нибудь\n"
         "- Переведи на английский привет\n\n"
-        "/image <промпт> - сгенерировать картинку"
+        "/image <промпт> - картинка\n"
+        "/clear - очистить память"
     )
+
+
+async def clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    user_histories.pop(user_id, None)
+    await update.message.reply_text("Память очищена! Начнём сначала.")
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -352,10 +362,27 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     try:
-        reply = await ai_chat([
-            {"role": "system", "content": "Ты полезный помощник. Отвечай кратко на русском."},
-            {"role": "user", "content": user_message}
-        ])
+        user_id = update.effective_user.id
+
+        if user_id not in user_histories:
+            user_histories[user_id] = []
+
+        user_histories[user_id].append({"role": "user", "content": user_message})
+
+        if len(user_histories[user_id]) > MAX_HISTORY:
+            user_histories[user_id] = user_histories[user_id][-MAX_HISTORY:]
+
+        messages = [
+            {"role": "system", "content": "Ты полезный помощник. Помнишь контекст разговора. Отвечай кратко на русском."}
+        ] + user_histories[user_id]
+
+        reply = await ai_chat(messages)
+
+        user_histories[user_id].append({"role": "assistant", "content": reply})
+
+        if len(user_histories[user_id]) > MAX_HISTORY:
+            user_histories[user_id] = user_histories[user_id][-MAX_HISTORY:]
+
         if len(reply) > 4000:
             reply = reply[:4000] + "..."
         await update.message.reply_text(reply)
@@ -372,6 +399,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("image", handle_image))
+    app.add_handler(CommandHandler("clear", clear_history))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_with_ai))
 
     logger.info("Bot is starting...")
