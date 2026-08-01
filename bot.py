@@ -75,15 +75,20 @@ async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Думаю...")
 
     try:
-        import urllib.parse
-        encoded = urllib.parse.quote(user_message)
-        url = f"https://text.pollinations.ai/{encoded}"
+        url = "https://keylessai.thryx.workers.dev/v1/chat/completions"
+        payload = {
+            "model": "openai",
+            "messages": [
+                {"role": "user", "content": user_message}
+            ],
+        }
 
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            response = await client.get(url)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload)
             response.raise_for_status()
+            data = response.json()
 
-        reply = response.text
+        reply = data["choices"][0]["message"]["content"]
 
         if len(reply) > 4000:
             reply = reply[:4000] + "..."
